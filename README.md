@@ -4,8 +4,7 @@
 
 ### Fake-AI API Server
 
-**AIkido** is a fake OpenAI-compatible API server that integrates real **ChatGPT** (via `nodriver`) and supports multiple AI backends (DeepSeek, Gemini, HackTricks, Phind, OpenAI).  
-It provides a **drop-in replacement API** for testing, research, and red team exercises, with optional features such as **HTTP/2, SSL, API key emulation, request logging, dump mode, and code injection simulation**.  
+**AIkido** is a fake OpenAI-compatible API server that integrates real **ChatGPT** (via `nodriver`) and supports multiple AI backends (DeepSeek, Gemini, HackTricks, Phind, OpenAI).  It provides a **drop-in replacement API** for testing, research, and red team exercises, with optional features such as **HTTP/2, SSL, API key emulation, request logging, dump mode, and code injection simulation**.  
 
 
 ## ✨ Features
