@@ -1,4 +1,4 @@
-<p align="center"><img width=500 alt="AIkido" src="https://github.com/JoelGMSec/AIkido/blob/main/AIkido.png"></p>
+<p align="center"><img width=800 alt="AIkido" src="https://github.com/JoelGMSec/AIkido/blob/main/AIkido.png"></p>
 
 # AIkido
 
