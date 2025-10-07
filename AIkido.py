@@ -39,7 +39,7 @@ app = Quart(__name__)
 app.logger.setLevel(logging.CRITICAL)
 
 
-def signal_handler():
+def signal_handler(signum, frame):
     print(colored(f"\n[!] Ctrl+C Pressed! Shutting down server..\n", 'red'))
     exit(0)
 
