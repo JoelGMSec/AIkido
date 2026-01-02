@@ -41,6 +41,8 @@ HTTP_PORT = 80
 HTTPS_PORT = 443
 ENABLE_HTTP = True
 ENABLE_HTTPS = True
+OLLAMA_PORT = 11434
+ENABLE_OLLAMA = True
 KEY_FILE = 'cert/server.key'
 CERT_FILE = 'cert/server.pem'
 
@@ -158,7 +160,7 @@ class ChatGPTBot:
             print(colored(f"Error sending message: {e}", 'red'))
             return False
         
-    async def wait_for_response(self, timeout=20):
+    async def wait_for_response(self, timeout=120):
         start_time = time.time()
         response_text = ""
         while time.time() - start_time < timeout:
@@ -215,7 +217,7 @@ async def rest_api_process(user_input: str, model: str = "openai") -> str:
                 encoded_prompt = urllib.parse.quote(user_input)
                 url = f"https://text.pollinations.ai/{encoded_prompt}"
                 params = {"model": "openai", "seed": int(seed)}
-                r = requests.get(url, params=params, timeout=60)
+                r = requests.get(url, params=params, timeout=120)
                 r.raise_for_status()
                 return r.text.strip()
 
@@ -246,7 +248,7 @@ async def rest_api_process(user_input: str, model: str = "openai") -> str:
             # === HackTricks API ===
             elif "hacktricks" in model_lc:
                 url = "https://www.hacktricks.ai/api/ht-api"
-                r = requests.post(url, json={"query": user_input}, timeout=420)
+                r = requests.post(url, json={"query": user_input}, timeout=360)
                 r.raise_for_status()
                 try:
                     data = r.json()
@@ -326,7 +328,7 @@ async def rest_api_process(user_input: str, model: str = "openai") -> str:
                 encoded_prompt = urllib.parse.quote(user_input)
                 url = f"https://text.pollinations.ai/{encoded_prompt}"
                 params = {"model": "openai", "seed": seed}
-                r = requests.get(url, params=params, timeout=60)
+                r = requests.get(url, params=params, timeout=120)
                 r.raise_for_status()
                 return r.text.strip()
 
@@ -523,7 +525,7 @@ if __name__ == "__main__":
                 script_path = f.name
             
             cmd = ["python3", script_path, user_input]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             os.unlink(script_path)
             
             if result.returncode == 0 and result.stdout.strip():
@@ -572,8 +574,8 @@ async def api_keys():
     
     response_data = {
         'message': 'API Key OK',
-        'type': 'gpt-4o',
-        'model': 'gpt-4o',
+        'type': 'gpt-5-nano',
+        'model': 'gpt-5-nano',
         'param': None,
         'code': '100% Valid API Key - Real no Fake'
     }
@@ -599,6 +601,96 @@ async def api_v1():
     }
     
     print(colored("[>] Sent /v1 response successfully\n", 'green'))
+    return jsonify(response_data)
+
+@app.route('/api/tags', methods=['GET', 'POST'])
+@app.route('/api/tags/', methods=['GET', 'POST'])
+async def api_tags():
+    log_request_info(request.method, request.path, dict(request.headers), request.remote_addr)
+    base_timestamp = "2025-01-31T12:33:21.1665928+02:00"
+    models_list = [
+        {
+            "name": "deepseek-v3:latest",
+            "model": "deepseek-v3:latest",
+            "modified_at": base_timestamp,
+            "size": 685000000000,
+            "digest": "a1b2c3d4e5f6019119339687c3c1757cc81b9da49709a3b3924863ba87ca777f",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "deepseek",
+                "families": ["deepseek"],
+                "parameter_size": "671.0B",
+                "quantization_level": "Q4_K_M"
+            }
+        },
+        {
+            "name": "gemma-3:latest",
+            "model": "gemma-3:latest",
+            "modified_at": base_timestamp,
+            "size": 27000000000,
+            "digest": "b2c3d4e5f6019119339687c3c1757cc81b9da49709a3b3924863ba87ca888g",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "gemma",
+                "families": ["gemma"],
+                "parameter_size": "27.0B",
+                "quantization_level": "Q4_K_M"
+            }
+        },
+        {
+            "name": "gpt-5-nano:latest",
+            "model": "gpt-5-nano:latest",
+            "modified_at": base_timestamp,
+            "size": 5000000000,
+            "digest": "c3d4e5f6019119339687c3c1757cc81b9da49709a3b3924863ba87ca999h",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "gpt",
+                "families": ["gpt"],
+                "parameter_size": "5.0B",
+                "quantization_level": "Q4_K_M"
+            }
+        },
+        {
+            "name": "hacktricks:latest",
+            "model": "hacktricks:latest",
+            "modified_at": base_timestamp,
+            "size": 8000000000,
+            "digest": "d4e5f6019119339687c3c1757cc81b9da49709a3b3924863ba87ca000i",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "hacktricks",
+                "families": ["hacktricks"],
+                "parameter_size": "8.0B",
+                "quantization_level": "Q4_K_M"
+            }
+        },
+        {
+            "name": "phind-70b:latest",
+            "model": "phind-70b:latest",
+            "modified_at": base_timestamp,
+            "size": 70000000000,
+            "digest": "e5f6019119339687c3c1757cc81b9da49709a3b3924863ba87ca111j",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "phind",
+                "families": ["phind"],
+                "parameter_size": "70.0B",
+                "quantization_level": "Q4_K_M"
+            }
+        }
+    ]
+
+    response_data = {
+        "models": models_list
+    }
+
+    print(colored("[>] Sent /api/tags response successfully\n", 'green'))
     return jsonify(response_data)
 
 @app.route('/v1/models', methods=['GET', 'POST'])
@@ -647,10 +739,135 @@ async def models():
     print(colored("[>] Sent /v1/models response successfully\n", 'green'))
     return jsonify(response_data)
 
+@app.route("/api/show", methods=["POST"])
+@app.route("/api/show/", methods=["POST"])
+async def api_show():
+    data = await request.get_json(force=True)
+    name = data.get("name")
+    response_data = {
+        "name": name,
+        "details": {
+            "family": "llama",
+            "parameter_size": "8B",
+            "quantization_level": "Q4_K_M"
+        },
+        "parameters": {},
+        "template": "{{ .Messages }}",
+        "capabilities": ["completion"]
+    }
+
+    print(colored("[>] Sent /api/show response successfully\n", 'green'))
+    return jsonify(response_data)
+
 @app.route('/api/chat', methods=['POST'])
 @app.route('/api/chat/', methods=['POST'])
 @app.route('/api/generate', methods=['POST'])
 @app.route('/api/generate/', methods=['POST'])
+async def ollama_generate():
+    log_request_info(request.method, request.path, dict(request.headers), request.remote_addr)
+    data = await request.get_json()
+    is_chat_endpoint = "chat" in request.path
+    model = data.get("model", "gpt-5-nano")
+    stream = data.get("stream", False)
+    prompt = ""
+
+    if is_chat_endpoint:
+        messages = data.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            prompt = last_message.get("content", "")
+    else:
+        prompt = data.get("prompt", "")
+
+    print(colored(f"--- Incoming Request Body ---", 'magenta'))
+    print(colored(f"{data}", 'red'))
+    print(colored(f"--- End Request Body Details ---\n", 'magenta'))
+    
+    if MODE == "Automatic REST API":
+        response_content = await rest_api_process(prompt, model)
+    elif MODE == "Deepseek REST API":
+        response_content = await rest_api_process(prompt, "deepseek")
+    elif MODE == "Gemini REST API":
+        response_content = await rest_api_process(prompt, "gemini")
+    elif MODE == "HackTricks REST API":
+        response_content = await rest_api_process(prompt, "hacktricks")
+    elif MODE == "OpenAI REST API":
+        response_content = await rest_api_process(prompt, "openai")
+    elif MODE == "Phind REST API":
+        response_content = await rest_api_process(prompt, "phind")
+    elif MODE == "ChatGPT (NoDriver)":
+        response_content = await process_with_chatgpt(prompt)
+    else:
+        response_content = await rest_api_process(prompt, model)
+    
+    prompt_clean = prompt.replace("\n", "").replace("\r", "")
+    response_content = re.sub(r'\*\*Sponsor\*\*.*', '', response_content, flags=re.DOTALL).strip()
+    response_content = re.sub(r"</?think>", "", response_content).strip()
+
+    print(colored(f"--- Response to be sent ---", 'blue'))
+    print(colored(f"{response_content}", 'cyan'))
+    print(colored(f"--- End Response Details ---\n", 'blue'))
+    print(colored(f"[>] Processing input: {prompt_clean[:35]}..", 'magenta'))
+    print(colored(f"[*] {MODE} response received: {len(response_content)} characters", 'yellow'))
+
+    if DUMP_MODE:
+        print(colored(f"[+] DUMP Request saved to {DUMP_FILE}", "cyan"))
+        try:
+            dump_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "request": data,
+                "response": response_content
+            }
+            with open(DUMP_FILE, "r+") as f:
+                file_data = json.load(f)
+                file_data.append(dump_entry)
+                f.seek(0)
+                json.dump(file_data, f, indent=4)
+        except:
+            pass
+
+    created_at = datetime.datetime.utcnow().isoformat() + "Z"
+    if stream:
+        async def generate_stream():
+            words = response_content.split()
+            for i, word in enumerate(words):
+                chunk_text = word + " "
+                chunk = {
+                    "model": model,
+                    "created_at": created_at,
+                    "done": False
+                }
+                
+                if is_chat_endpoint:
+                    chunk["message"] = {"role": "assistant", "content": chunk_text}
+                else:
+                    chunk["response"] = chunk_text
+                yield json.dumps(chunk, ensure_ascii=False, separators=(',', ':')) + "\n"
+                await asyncio.sleep(0.02)
+
+            final_chunk = {
+                "model": model,
+                "created_at": created_at,
+                "done": True,
+                "done_reason": "stop"
+            }
+            yield json.dumps(final_chunk, ensure_ascii=False, separators=(',', ':')) + "\n"
+        return Response(generate_stream(), mimetype="application/x-ndjson")
+
+    response_data = {
+        "model": model,
+        "created_at": created_at,
+        "done": True,
+        "done_reason": "stop"
+    }
+    
+    if is_chat_endpoint:
+        response_data["message"] = {"role": "assistant", "content": response_content}
+    else:
+        response_data["response"] = response_content
+    compact_json = json.dumps(response_data, ensure_ascii=False, separators=(',', ':'))
+    return Response(compact_json, mimetype='application/json')
+
 @app.route('/chat/completions', methods=['POST'])
 @app.route('/chat/completions/', methods=['POST'])
 @app.route('/v1/chat/completions', methods=['POST'])
@@ -658,7 +875,7 @@ async def models():
 async def chat_completions():
     log_request_info(request.method, request.path, dict(request.headers), request.remote_addr)
     response_content = "Hello! I am a simulated OpenAI API with real ChatGPT integrated via nodriver. How can I help you?"
-    model_requested = "gpt-4o"
+    model_requested = "gpt-5-nano"
     stream = False
 
     try:
@@ -785,7 +1002,7 @@ async def send_streaming_response(content: str, model: str):
         yield f"data: {json.dumps(final_chunk)}\n\n"
         yield "data: [DONE]\n\n"
     
-    print(colored(f"[>] Sent streaming response for model: {model}\n", 'green'))
+    print(colored(f"[>] Sent streaming OpenAI response for model: {model}\n", 'green'))
     
     return Response(
         generate(),
@@ -822,7 +1039,7 @@ async def send_regular_response(content: str, model: str):
         }
     }
     
-    print(colored(f"[>] Sent regular response for model: {model}\n", 'green'))
+    print(colored(f"[>] Sent regular OpenAI response for model: {model}\n", 'green'))
     return jsonify(response_data)
 
 @app.route('/version', methods=['GET'])
@@ -901,6 +1118,17 @@ async def run_https_server():
     config.alpn_protocols = ['h2', 'http/1.1']
     await run_server_with_shutdown(config, "HTTPS")
 
+async def run_ollama_server():
+    config = Config()
+    config.bind = [f"{HOST}:{OLLAMA_PORT}"]
+    config.accesslog = None
+    config.errorlog = None
+    config.use_reloader = False
+    config.loglevel = "critical"
+    config.access_logger = None
+    config.error_logger = None
+    await run_server_with_shutdown(config, "OLLAMA")
+
 async def run_dual_server():
     tasks = []
     
@@ -909,6 +1137,9 @@ async def run_dual_server():
     
     if ENABLE_HTTPS:
         tasks.append(asyncio.create_task(run_https_server()))
+
+    if ENABLE_OLLAMA:
+        tasks.append(asyncio.create_task(run_ollama_server()))
     
     if not tasks:
         print(colored("No servers were started. Please check your configuration.", 'red'))
@@ -917,8 +1148,9 @@ async def run_dual_server():
     print(colored("="*40, 'blue'))
     print(colored("       AIkido API Server Started", 'magenta', attrs=['bold']))
     print(colored("="*40, 'blue'))
-    print(colored(f"> HTTP:  http://{HOST}:{HTTP_PORT} (HTTP/1)" if ENABLE_HTTP else "HTTP: Disabled", 'green' if ENABLE_HTTP else 'red'))
-    print(colored(f"> HTTPS: https://{HOST}:{HTTPS_PORT} (HTTP/2)" if ENABLE_HTTPS else "HTTPS: Disabled", 'green' if ENABLE_HTTPS else 'red'))
+    print(colored(f"> HTTP:  http://{HOST}:{HTTP_PORT}" if ENABLE_HTTP else "HTTP: Disabled", 'green' if ENABLE_HTTP else 'red'))
+    print(colored(f"> HTTPS: https://{HOST}:{HTTPS_PORT} " if ENABLE_HTTPS else "HTTPS: Disabled", 'green' if ENABLE_HTTPS else 'red'))
+    print(colored(f"> OLLAMA: http://{HOST}:{OLLAMA_PORT}" if ENABLE_OLLAMA else "OLLAMA: Disabled", 'green' if ENABLE_OLLAMA else 'red'))
     print(colored(f"> API Model Backend: {MODE}", 'yellow'))
     if CODE_INJECTION_ENABLED:
         print(colored(f"> CODE INJECTION: ENABLED (PYTHON)", 'red'))
@@ -926,11 +1158,11 @@ async def run_dual_server():
         print(colored(f"> DUMP Logging to file: ENABLED", "cyan"))
     print(colored("="*40, 'blue'))
     print(colored("Available endpoints:", 'magenta'))
-    print(colored("> api.openai.com", 'white'))
-    print(colored("> api.deepseek.com", 'white'))
-    print(colored("> localhost (ollama)", 'white'))
+    print(colored("> api.openai.com (http/s)", 'white'))
+    print(colored("> api.deepseek.com (http/s)", 'white'))
+    print(colored("> localhost:11434 (ollama)", 'white'))
     print(colored("="*40, 'blue'))
-    print(colored("   Press Ctrl+C to stop both servers", 'red'))
+    print(colored("   Press Ctrl+C to stop all servers", 'red'))
     print(colored("="*40 + "\n", 'blue'))
     
     try:
