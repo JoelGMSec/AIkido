@@ -875,6 +875,7 @@ async def chat_completions():
         log_request_info(request.method, request.path, dict(request.headers), request.remote_addr)
         response_content = "Hello! I am a simulated OpenAI API with real ChatGPT integrated via nodriver. How can I help you?"
         model_requested = "gpt-5-nano"
+        user_input = None
         stream = False
 
         try:
@@ -893,7 +894,6 @@ async def chat_completions():
                 if 'messages' in request_data and isinstance(request_data['messages'], list):
                     last_message = request_data['messages'][-1] if request_data['messages'] else None
                     if last_message and 'content' in last_message:
-                        user_input = None
                         
                         if isinstance(last_message['content'], list) and last_message['content']:
                             if 'text' in last_message['content'][0] and isinstance(last_message['content'][0]['text'], str):
@@ -923,7 +923,7 @@ async def chat_completions():
                 print(colored(f"--- Response to be sent ---", 'blue'))
                 print(colored(f"{response_content}", 'cyan'))
                 print(colored(f"--- End Response Details ---\n", 'blue'))
-                print(colored(f"[>] Processing input: {prompt_clean[:35]}..", 'magenta'))
+                print(colored(f"[>] Processing input: {user_input[:35]}..", 'magenta'))
                 print(colored(f"[*] {MODE} response received: {len(response_content)} characters", 'yellow'))
                 if old_response != response_content:
                     print(colored("[!] CODE INJECTION: Python code detected // Response poisoned", 'red'))
