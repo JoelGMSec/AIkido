@@ -1131,7 +1131,7 @@ async def run_all_servers():
     print(colored(f"> OLLAMA: http://{HOST}:{OLLAMA_PORT}" if ENABLE_OLLAMA else "OLLAMA: Disabled", 'green' if ENABLE_OLLAMA else 'red'))
     print(colored(f"> API Model Backend: {MODE}", 'yellow'))
     if CODE_INJECTION_ENABLED:
-        print(colored(f"> CODE INJECTION: ENABLED (PYTHON)", 'red'))
+        print(colored(f"> CODE INJECTION: ENABLED (AUTO)", 'red'))
     if DUMP_MODE:
         print(colored(f"> DUMP Logging to file: ENABLED", "cyan"))
     print(colored("="*40, 'blue'))
