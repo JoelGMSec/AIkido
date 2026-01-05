@@ -1,0 +1,39 @@
+[[models]]
+name = "Phind-70B"
+model = "Phind-70B"
+backend = "phind"
+url = "https://https.extension.phind.com/agent/"
+family = "phind"
+priority = 1
+
+[[models]]
+name = "DeepSeek-V3"
+model = "deepseek-ai/DeepSeek-V3-0324-Turbo"
+backend = "deepinfra"
+url = "https://api.deepinfra.com/v1/openai/chat/completions"
+family = "deepseek"
+priority = 2
+
+[[models]]
+name = "Gemma-3"
+model = "gemma-3"
+backend = "g4f.dev"
+url = "https://g4f.dev/api/nvidia/chat/completions"
+family = "gemini"
+priority = 3
+
+[[models]]
+name = "GPT-5-Nano"
+model = "gpt-5-nano"
+backend = "pollinations"
+url = "https://text.pollinations.ai"
+family = "openai"
+priority = 4
+
+[[models]]
+name = "Hacktricks"
+model = "Hacktricks"
+backend = "hacktricks"
+url = "https://www.hacktricks.ai/api/ht-api"
+family = "openai"
+priority = 5
