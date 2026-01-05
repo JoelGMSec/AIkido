@@ -109,30 +109,36 @@ class ModelLoader:
     @classmethod
     async def get_prioritized_chain(cls, requested_model_name: str) -> List[Dict]:
         all_models = await cls.get_models()
-        exact_match = next((m for m in all_models if m["name"] == requested_model_name), None)
-        target_family = exact_match["family"] if exact_match else "openai"
-        if not exact_match:
+        if not all_models:
+            return []
+        sorted_models = sorted(all_models, key=lambda x: x.get('priority', 99))
+        exact_match = next((m for m in sorted_models if m["name"] == requested_model_name), None)
+        target_family = None
+        if exact_match:
+            target_family = exact_match.get("family")
+        else:
             lower_name = requested_model_name.lower()
             if "deepseek" in lower_name: target_family = "deepseek"
             elif "phind" in lower_name: target_family = "phind"
             elif "gemma" in lower_name or "gemini" in lower_name: target_family = "gemini"
             elif "hacktricks" in lower_name: target_family = "hacktricks"
+            elif "openai" in lower_name or "gpt" in lower_name: target_family = "openai"
 
         chain_exact = []
-        if exact_match:
-            chain_exact.append(exact_match)
         chain_family = []
         chain_others = []
-        sorted_models = sorted(all_models, key=lambda x: x.get('priority', 99))
 
+        if exact_match:
+            chain_exact.append(exact_match)
         for m in sorted_models:
             if exact_match and m["name"] == exact_match["name"]:
                 continue
-            if m.get("family") == target_family:
+            if target_family and m.get("family") == target_family:
                 chain_family.append(m)
             else:
                 chain_others.append(m)
-        return chain_exact + chain_family + chain_others
+        full_chain = chain_exact + chain_family + chain_others
+        return full_chain
 
 def run_openai(user_input: str, config: Dict) -> str:
     seed = random.randrange(11, 99, 2)
