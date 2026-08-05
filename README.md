@@ -10,7 +10,7 @@
 ## ✨ Features
 
 - 🌐 **Web User Interface**: Chat with any supported model using a responsive, user-friendly interface. 
-- ⚡ **Multi-backend support**: Choose between ChatGPT (NoDriver) and any OpenAI or Ollama compatible REST API.
+- ⚡ **Multi-backend support**: Choose between ChatGPT (NoDriver) or OpenAI/Ollama compatible REST API.
 - 🐍 **Code injection simulation**: Payload response injection to test LLM supply chain or insecure eval scenarios.
 - 📜 **Dump logging**: Save all requests and responses to JSON for auditing or analysis.
 - 🔑 **API key validation**: Fake endpoint to simulate valid OpenAI compatible API keys.
