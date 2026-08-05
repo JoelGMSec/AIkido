@@ -1,39 +1,75 @@
+# ==========================================================
+#  AIkido - Models configuration (models.toml)
+# ==========================================================
+#
+# Each model is defined with the following fields:
+#
+#   name         -> Name the proxy exposes (how clients request it)
+#   model        -> Real model identifier on the provider
+#   backend      -> API protocol: "openai" (OpenAI-compatible)
+#                   or "ollama" (native Ollama protocol)
+#   url          -> Endpoint base. For "openai" the server appends
+#                   /chat/completions; for "ollama" it appends /api/generate
+#                   (or specify it directly, as in the local example).
+#   family       -> Family used for round-robin / failover (you define it)
+#   priority     -> Lower number = tried first. If the whole family fails,
+#                   the next one is used following this order.
+#   api_key      -> API key in plain text (sent as Bearer if present)
+#   api_key_env  -> Environment variable name holding the API key
+#                   (safer alternative to api_key)
+#
+# Auto mode (--api-rest auto): a request for "deepseek" will try the models
+# in the "deepseek" family first, in priority order, and if all of them fail
+# it will move on to the next family in numeric order.
+# Forced mode (--api-rest <family>): only the models of that family are used.
+#
+# WARNING: replace the example keys with your own.
+# ==========================================================
+
+# --- deepseek family: 2 providers, failover between them ---
 [[models]]
-name = "Phind-70B"
-model = "Phind-70B"
-backend = "phind"
-url = "https://https.extension.phind.com/agent/"
-family = "phind"
+name = "DeepSeek-V3.2"
+model = "deepseek/deepseek-v3.2"
+backend = "openai"
+url = "https://api.opencode.ai/api/v1"
+api_key_env = "OPENCODE_API_KEY"
+family = "deepseek"
 priority = 1
 
 [[models]]
-name = "DeepSeek-V3"
-model = "deepseek-ai/DeepSeek-V3-0324-Turbo"
-backend = "deepinfra"
-url = "https://api.deepinfra.com/v1/openai/chat/completions"
+name = "DeepSeek-R1"
+model = "deepseek/deepseek-r1"
+backend = "openai"
+url = "https://openrouter.ai/api/v1"
+api_key = "sk-or-v1-xxxxxxxxxxxxxxxxxxxxxxxx"
 family = "deepseek"
 priority = 2
 
+# --- openai family ---
 [[models]]
-name = "Gemma-3"
-model = "gemma-3"
-backend = "g4f.dev"
-url = "https://g4f.dev/api/nvidia/chat/completions"
+name = "GPT-5"
+model = "openai/gpt-5"
+backend = "openai"
+url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"
+family = "openai"
+priority = 1
+
+# --- gemini family ---
+[[models]]
+name = "Gemini-2.5-Pro"
+model = "google/gemini-2.5-pro"
+backend = "openai"
+url = "https://generativelanguage.googleapis.com/v1beta/openai"
+api_key = "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 family = "gemini"
-priority = 3
+priority = 1
 
+# --- ollama family (local, no API key) ---
 [[models]]
-name = "GPT-5-Nano"
-model = "gpt-5-nano"
-backend = "pollinations"
-url = "https://text.pollinations.ai"
-family = "openai"
-priority = 4
-
-[[models]]
-name = "Hacktricks"
-model = "Hacktricks"
-backend = "hacktricks"
-url = "https://www.hacktricks.ai/api/ht-api"
-family = "openai"
-priority = 5
+name = "Llama-3.3 (local)"
+model = "llama3.3:70b"
+backend = "ollama"
+url = "http://192.168.204.1:11434/api/generate"
+family = "ollama"
+priority = 1

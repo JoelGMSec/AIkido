@@ -27,7 +27,7 @@ from neotermcolor import colored
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
 from typing import Dict, Any, Optional, List, Tuple
-from quart import Quart, request, Response, jsonify
+from quart import Quart, request, Response, jsonify, render_template, send_from_directory
 
 # Remove warnings
 warnings.filterwarnings("ignore")
@@ -48,6 +48,9 @@ KEY_FILE = 'cert/server.key'
 CERT_FILE = 'cert/server.pem'
 MODELS_FILE = 'models.toml'
 PAYLOADS_FILE = 'payloads.toml'
+CHATS_DIR = "chats"
+UPLOADS_DIR = "uploads"
+MAX_TEXT_CONTENT = 20000
 
 # Global variables
 MODE = None
@@ -57,9 +60,11 @@ REQUEST_LOCK = asyncio.Lock()
 CODE_INJECTION_ENABLED = False
 shutdown_event = asyncio.Event()
 
-# Create Quart app
+# Create Quart app & chats folder
 app = Quart(__name__)
 app.logger.setLevel(logging.CRITICAL)
+os.makedirs(CHATS_DIR, exist_ok=True)
+os.makedirs(UPLOADS_DIR, exist_ok=True)
 
 class PayloadLoader:
     _payloads: List[Dict] = []
@@ -109,134 +114,174 @@ class ModelLoader:
     @classmethod
     async def get_prioritized_chain(cls, requested_model_name: str) -> List[Dict]:
         all_models = await cls.get_models()
+
         if not all_models:
             return []
-        sorted_models = sorted(all_models, key=lambda x: x.get('priority', 99))
-        exact_match = next((m for m in sorted_models if m["name"] == requested_model_name), None)
+
+        sorted_models = sorted(all_models, key=lambda x: x.get("priority", 99))
+        requested_lower = (requested_model_name or "").strip().lower()
+        request_base = requested_lower.split(":", 1)[0].strip()
+
+        chain = []
+        used_names = set()
+
+        def add_model(m):
+            if not m:
+                return
+            model_name = m.get("name", "")
+            if model_name not in used_names:
+                chain.append(m)
+                used_names.add(model_name)
+
+        exact_name = next(
+            (m for m in sorted_models if m.get("name", "").lower() == requested_lower),
+            None
+        )
+        add_model(exact_name)
+
+        exact_name_base = next(
+            (m for m in sorted_models if m.get("name", "").lower() == request_base),
+            None
+        )
+        add_model(exact_name_base)
+
+        exact_model = next(
+            (m for m in sorted_models if m.get("model", "").lower() == requested_lower),
+            None
+        )
+        add_model(exact_model)
+
+        exact_model_base = next(
+            (m for m in sorted_models if m.get("model", "").lower().split(":", 1)[0] == request_base),
+            None
+        )
+        add_model(exact_model_base)
+
         target_family = None
-        if exact_match:
-            target_family = exact_match.get("family")
-        else:
-            lower_name = requested_model_name.lower()
-            if "deepseek" in lower_name: target_family = "deepseek"
-            elif "phind" in lower_name: target_family = "phind"
-            elif "gemma" in lower_name or "gemini" in lower_name: target_family = "gemini"
-            elif "hacktricks" in lower_name: target_family = "hacktricks"
-            elif "openai" in lower_name or "gpt" in lower_name: target_family = "openai"
+        for candidate in chain:
+            fam = candidate.get("family", "").strip().lower()
+            if fam:
+                target_family = fam
+                break
 
-        chain_exact = []
-        chain_family = []
-        chain_others = []
+        if not target_family:
+            family_candidates = []
+            for m in sorted_models:
+                fam = m.get("family", "").strip().lower()
+                if fam and fam in requested_lower:
+                    family_candidates.append(fam)
 
-        if exact_match:
-            chain_exact.append(exact_match)
-        for m in sorted_models:
-            if exact_match and m["name"] == exact_match["name"]:
-                continue
-            if target_family and m.get("family") == target_family:
-                chain_family.append(m)
+            if family_candidates:
+                family_candidates.sort(key=len, reverse=True)
+                target_family = family_candidates[0]
             else:
-                chain_others.append(m)
-        full_chain = chain_exact + chain_family + chain_others
-        return full_chain
+                if "deepseek" in requested_lower:
+                    target_family = "deepseek"
+                elif "gemma" in requested_lower or "gemini" in requested_lower:
+                    target_family = "gemini"
+                elif "openai" in requested_lower or "gpt" in requested_lower:
+                    target_family = "openai"
+                elif "ollama" in requested_lower:
+                    target_family = "ollama"
 
-def run_openai(user_input: str, config: Dict) -> str:
-    seed = random.randrange(11, 99, 2)
-    encoded_prompt = urllib.parse.quote(user_input)
-    base_url = config.get("url", "https://text.pollinations.ai")
-    if base_url.endswith("/"): base_url = base_url[:-1]
-    url = f"{base_url}/{encoded_prompt}"
-    model_val = config.get("model", config.get("backend_model", "openai"))
-    params = {"model": model_val, "seed": int(seed)}
-    r = requests.get(url, params=params, timeout=120)
-    r.raise_for_status()
-    return r.text.strip()
+        if target_family:
+            family_models = [
+                m for m in sorted_models
+                if m.get("family", "").strip().lower() == target_family
+            ]
+            for m in family_models:
+                add_model(m)
 
-def run_gemini(user_input: str, config: Dict) -> str:
-    url = config.get("url", "https://g4f.dev/api/nvidia/chat/completions")
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer"}
-    model_val = config.get("model", config.get("backend_model", "google/gemma-3-27b-it"))
+        for m in sorted_models:
+            add_model(m)
+
+        return chain
+
+def call_openai_compatible(user_input: str, config: Dict) -> str:
+    base_url = config.get("url", "").strip()
+    model = config.get("model", "").strip()
+    api_key = config.get("api_key", "").strip()
+    api_key_env = config.get("api_key_env", "").strip()
+
+    if not base_url:
+        raise Exception("OpenAI-compatible URL missing in models.toml")
+    if not model:
+        raise Exception("OpenAI-compatible model missing in models.toml")
+
+    if api_key_env and not api_key:
+        api_key = os.environ.get(api_key_env, "").strip()
+
+    endpoint = base_url.rstrip("/")
+    if not endpoint.endswith("/chat/completions"):
+        endpoint += "/chat/completions"
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
     payload = {
-        "model": model_val,
+        "model": model,
         "messages": [{"role": "user", "content": user_input}]
     }
-    r = requests.post(url, headers=headers, json=payload, timeout=120)
+
+    r = requests.post(endpoint, headers=headers, json=payload, timeout=120)
     r.raise_for_status()
+
     try:
         data = r.json()
-        return data["choices"][0]["message"]["content"].strip()
+        content = data["choices"][0]["message"]["content"].strip()
+        if content:
+            return content
     except (json.JSONDecodeError, KeyError, IndexError):
-        return r.text.strip()
+        pass
+    raise Exception(f"Invalid response from {endpoint}")
 
-def run_hacktricks(user_input: str, config: Dict) -> str:
-    url = config.get("url", "https://www.hacktricks.ai/api/ht-api")
-    r = requests.post(url, json={"query": user_input}, timeout=360)
+def call_ollama_compatible(user_input: str, config: Dict) -> str:
+    base_url = config.get("url", "").strip()
+    model = config.get("model", "").strip()
+    api_key = config.get("api_key", "").strip()
+    api_key_env = config.get("api_key_env", "").strip()
+
+    if not base_url:
+        raise Exception("Ollama URL missing in models.toml")
+    if not model:
+        raise Exception("Ollama model missing in models.toml")
+
+    if api_key_env and not api_key:
+        api_key = os.environ.get(api_key_env, "").strip()
+
+    endpoint = base_url.rstrip("/")
+    if "api/generate" not in endpoint:
+        endpoint += "/api/generate"
+
+    payload = {
+        "model": model,
+        "prompt": user_input,
+        "stream": False
+    }
+
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    r = requests.post(endpoint, json=payload, headers=headers, timeout=120)
     r.raise_for_status()
+
     try:
         data = r.json()
-        return data.get("response", "").strip()
-    except json.JSONDecodeError:
-        return r.text.strip()
+        if isinstance(data, dict):
+            response = data.get("response", "").strip()
+            if response:
+                return response
+    except (json.JSONDecodeError, ValueError):
+        pass
+    raise Exception(f"Invalid response from {endpoint}")
 
-def run_deepseek(user_input: str, config: Dict) -> str:
-    url = config.get("url", "https://api.deepinfra.com/v1/openai/chat/completions")
-    headers = {"Content-Type": "application/json", "Authorization": "Bearer"}
-    model_val = config.get("model", config.get("backend_model", "deepseek-ai/DeepSeek-V3-0324-Turbo"))
-    payload = {
-        "model": model_val,
-        "messages": [{"role": "user", "content": user_input}]
-    }
-    r = requests.post(url, headers=headers, json=payload, timeout=120)
-    r.raise_for_status()
-    try:
-        data = r.json()
-        return data["choices"][0]["message"]["content"].strip()
-    except (json.JSONDecodeError, KeyError, IndexError):
-        return r.text.strip()
-
-def run_phind(user_input: str, config: Dict) -> str:
-    url = config.get("url", "https://https.extension.phind.com/agent/")
-    headers = {
-        "Content-Type": "application/json",
-        "User-Agent": "",
-        "Accept": "*/*",
-        "Accept-Encoding": "Identity"
-    }
-    model_val = config.get("model", config.get("backend_model", "Phind-70B"))
-    payload = {
-        "additional_extension_context": "",
-        "allow_magic_buttons": True,
-        "is_vscode_extension": True,
-        "requested_model": model_val,
-        "user_input": user_input,
-        "message_history": [
-            {"role": "system", "content": "You are a helpfully assistant."},
-            {"role": "user", "content": user_input}
-        ]
-    }
-    r = requests.post(url, headers=headers, json=payload, stream=True, timeout=120)
-    r.raise_for_status()
-    full_text = ""
-    for line in r.iter_lines():
-        if not line: continue
-        if line.startswith(b"data: "):
-            try:
-                obj = json.loads(line.decode()[6:])
-                if "choices" in obj and obj["choices"]:
-                    delta = obj["choices"][0]["delta"]
-                    if "content" in delta:
-                        full_text += delta["content"]
-            except Exception:
-                continue
-    return full_text.strip()
-
-BACKEND_HANDLERS = {
-    "phind": run_phind,
-    "g4f.dev": run_gemini,
-    "deepinfra": run_deepseek,
-    "pollinations": run_openai,
-    "hacktricks": run_hacktricks,
-    }
+def call_backend(user_input: str, config: Dict) -> str:
+    backend = config.get("backend", "openai").strip().lower()
+    if backend == "ollama":
+        return call_ollama_compatible(user_input, config)
+    return call_openai_compatible(user_input, config)
 
 def generate_random_string(length=10):
     return ''.join(random.choices(string.ascii_lowercase + string.digits, k=length))
@@ -379,40 +424,47 @@ class ChatGPTBot:
 async def rest_api_process(user_input: str, model_name: str = "gpt-5-nano") -> Tuple[str, str]:
     loop = asyncio.get_event_loop()
     chain = []
+    default_model = None
+    
+    all_models = await ModelLoader.get_models()
+    if all_models:
+        default_model = all_models[0]
+    
     if MODE == "Automatic REST API":
         chain = await ModelLoader.get_prioritized_chain(model_name)
-        if not chain:
-            chain = [{"name": "fallback", "backend": "openai", "model": "openai"}]
+        if not chain and default_model:
+            chain = [default_model]
     else:
-        backend_map = {
-            "Deepseek REST API": "deepseek",
-            "Gemini REST API": "gemini",
-            "HackTricks REST API": "hacktricks",
-            "OpenAI REST API": "openai",
-            "Phind REST API": "phind"
-        }
-        b_key = backend_map.get(MODE, "openai")
-        chain = [{"name": f"Strict-{b_key}", "backend": b_key, "model": model_name}]
+        forced = MODE.replace(" REST API", "").strip().lower()
+        forced_models = [
+            m for m in all_models
+            if m.get("name", "").strip().lower() == forced
+            or m.get("model", "").strip().lower() == forced
+        ]
+        if forced_models:
+            chain = forced_models
+        else:
+            chain = [
+                m for m in all_models
+                if m.get("family", "").strip().lower() == forced
+            ]
+        chain.sort(key=lambda x: x.get("priority", 99))
 
-    last_error = ""
+    if not chain:
+        return f"Error: No models configured for family '{MODE}'. Check models.toml", "None"
+
+    attempts = []
     for model_config in chain:
-        backend_key = model_config.get("backend", "").lower()
-        handler_func = BACKEND_HANDLERS.get(backend_key)
-        if not handler_func:
-            if "openai" in backend_key: handler_func = BACKEND_HANDLERS["openai"]
-            elif "gemma" in backend_key: handler_func = BACKEND_HANDLERS["gemini"]
-            elif "deep" in backend_key: handler_func = BACKEND_HANDLERS["deepseek"]
-        
-        if handler_func:
-            try:
-                response = await loop.run_in_executor(None, handler_func, user_input, model_config)
-                return response, model_config.get("name", backend_key)
-            except Exception as e:
-                last_error = str(e)
-                if MODE != "Automatic REST API":
-                    return f"Error ({MODE}): {str(e)}", "Error"
-                continue
-    return f"Error: All attempted backends failed. Last error: {last_error}", "None"
+        model_display = model_config.get("name", model_config.get("model", "unknown"))
+        try:
+            response = await loop.run_in_executor(None, call_backend, user_input, model_config)
+            return response, model_display
+        except Exception as e:
+            attempts.append(f"{model_display}: {e}")
+            continue
+    
+    detail = " | ".join(attempts) if attempts else "unknown error"
+    return f"Error: All attempted backends failed. {detail}", "None"
 
 def signal_handler(signum, frame):
     print(colored(f"\n[!] Ctrl+C Pressed! Shutting down server..\n", 'red'))
@@ -431,9 +483,8 @@ def log_request_info(method: str, path: str, headers: Dict[str, str], client_ip:
         print(colored(f"  {header}: {value}", 'white'))
     print(colored(f"--- End {method} Request Details ---\n", 'green'))
 
-def process_with_chatgpt_subprocess(user_input: str) -> str:
+async def process_with_chatgpt_subprocess(user_input: str) -> str:
     import tempfile
-    import concurrent.futures
     
     def run_chatgpt_script():
         chatgpt_script = '''#!/usr/bin/python3
@@ -517,14 +568,15 @@ class ChatGPTBot:
         except Exception:
             return False
         
-    async def wait_for_response(self, timeout=10):
+    async def wait_for_response(self, timeout=120):
         start_time = time.time()
+        response_text = ""
         while time.time() - start_time < timeout:
             try:
                 paragraph_elements = await self.page.select_all('p')
                 if paragraph_elements:
                     response_text = paragraph_elements[0]
-                    if response_text and len(response_text) > 10:
+                    if response_text and len(str(response_text)) > 10:
                         return response_text
                 await asyncio.sleep(1)
             except Exception:
@@ -602,7 +654,7 @@ if __name__ == "__main__":
                 script_path = f.name
             
             cmd = ["python3", script_path, user_input]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             os.unlink(script_path)
             
             if result.returncode == 0 and result.stdout.strip():
@@ -617,12 +669,11 @@ if __name__ == "__main__":
         except Exception as e:
             return f"Unexpected error: {str(e)}"
     
-    loop = asyncio.get_event_loop()
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        try:
-            return loop.run_in_executor(executor, run_chatgpt_script)
-        except Exception as e:
-            return f"Unexpected error: {str(e)}"
+    loop = asyncio.get_running_loop()
+    try:
+        return await loop.run_in_executor(None, run_chatgpt_script)
+    except Exception as e:
+        return f"Unexpected error: {str(e)}"
 
 async def process_with_chatgpt(user_input: str) -> str:
     return await process_with_chatgpt_subprocess(user_input)
@@ -726,6 +777,41 @@ async def models():
         "data": data_list
     }
     return jsonify(response_data)
+
+@app.route('/api/mode', methods=['GET'])
+@app.route('/api/mode/', methods=['GET'])
+async def api_mode():
+    all_models = await ModelLoader.get_models()
+    selection = "auto"
+    forced = None
+    used_models = all_models
+
+    if MODE == "ChatGPT (NoDriver)":
+        selection = "none"
+        used_models = []
+    elif MODE != "Automatic REST API":
+        selection = "forced"
+        forced = MODE.replace(" REST API", "").strip()
+        forced_lower = forced.lower()
+        forced_models = [
+            m for m in all_models
+            if m.get("name", "").strip().lower() == forced_lower
+            or m.get("model", "").strip().lower() == forced_lower
+        ]
+        if forced_models:
+            used_models = forced_models
+        else:
+            used_models = [
+                m for m in all_models
+                if m.get("family", "").strip().lower() == forced_lower
+            ]
+
+    return jsonify({
+        "mode": MODE,
+        "selection": selection,
+        "forced": forced,
+        "models": [m.get("name") for m in used_models],
+    })
 
 @app.route("/api/show", methods=["POST"])
 @app.route("/api/show/", methods=["POST"])
@@ -1046,22 +1132,89 @@ async def version():
     
     return jsonify(response_data)
 
-@app.route('/', methods=['GET'])
-async def root():
-    response_data = {
-        'message': 'AIkido API Server is running with ChatGPT integration',
-        'version': '2.2.0',
-        'protocol': 'HTTP/2',
-        'chatgpt_backend': 'nodriver',
-        'endpoints': {
-            'models': '/v1/models',
-            'chat': '/v1/chat/completions',
-            'api_keys': '/account/api-keys',
-            'version': '/version'
-        }
-    }
-    
-    return jsonify(response_data)
+@app.route('/')
+async def index():
+    return await render_template('index.html')
+
+@app.route('/AIkido.png')
+async def serve_logo():
+    return await send_from_directory(os.getcwd(), 'AIkido.png')
+
+@app.route('/api/history', methods=['GET'])
+async def get_history():
+    if not os.path.exists(CHATS_DIR):
+        os.makedirs(CHATS_DIR)
+    files = sorted([f for f in os.listdir(CHATS_DIR) if f.endswith('.json')], 
+                   key=lambda x: os.path.getmtime(os.path.join(CHATS_DIR, x)), reverse=True)
+    history = []
+    for f in files:
+        try:
+            with open(os.path.join(CHATS_DIR, f), 'r') as j:
+                history.append(json.load(j))
+        except: continue
+    return jsonify(history)
+
+@app.route('/api/history', methods=['POST'])
+async def save_chat():
+    data = await request.get_json()
+    chat_id = data.get('id')
+    if not chat_id: return jsonify({"error": "No ID"}), 400
+    file_path = os.path.join(CHATS_DIR, f"{chat_id}.json")
+    with open(file_path, 'w') as f:
+        json.dump(data, f, indent=4)
+    return jsonify({"status": "ok"})
+
+@app.route('/api/history/<chat_id>', methods=['DELETE'])
+async def delete_chat(chat_id):
+    file_path = os.path.join(CHATS_DIR, f"{chat_id}.json")
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return jsonify({"status": "deleted"})
+    return jsonify({"error": "File not found"}), 404
+
+TEXT_EXTENSIONS = {
+    '.txt', '.md', '.py', '.js', '.ts', '.jsx', '.tsx', '.html', '.css', '.json',
+    '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.csv', '.log', '.xml',
+    '.sql', '.sh', '.bash', '.c', '.h', '.cpp', '.hpp', '.java', '.go', '.rs',
+    '.rb', '.php', '.pl', '.lua', '.r', '.ipynb', '.bat', '.ps1'
+}
+
+@app.route('/api/upload', methods=['POST'])
+@app.route('/api/upload/', methods=['POST'])
+async def api_upload():
+    try:
+        files = await request.files
+        file = files.get('file')
+        if file is None or not file.filename:
+            return jsonify({"error": "No file provided"}), 400
+
+        safe_name = re.sub(r'[^a-zA-Z0-9._-]', '_', os.path.basename(file.filename))
+        save_path = os.path.join(UPLOADS_DIR, f"{int(time.time())}_{safe_name}")
+
+        await file.save(save_path)
+        size = os.path.getsize(save_path)
+
+        content = ""
+        is_text = False
+        content_type = (file.content_type or "").lower()
+        ext = os.path.splitext(safe_name)[1].lower()
+
+        if content_type.startswith("text/") or ext in TEXT_EXTENSIONS:
+            is_text = True
+            with open(save_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()[:MAX_TEXT_CONTENT]
+
+        return jsonify({
+            "filename": file.filename,
+            "size": size,
+            "content_type": content_type,
+            "is_text": is_text,
+            "content": content,
+            "truncated": is_text and size > MAX_TEXT_CONTENT
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 async def run_server_with_shutdown(config, server_type):
     try:
@@ -1130,23 +1283,25 @@ async def run_all_servers():
         return
     
     print(colored("="*40, 'blue'))
-    print(colored("       AIkido API Server Started", 'magenta', attrs=['bold']))
+    print(colored("           AIkido API Server", 'magenta', attrs=['bold']))
     print(colored("="*40, 'blue'))
-    print(colored(f"> HTTP:  http://{HOST}:{HTTP_PORT}" if ENABLE_HTTP else "HTTP: Disabled", 'green' if ENABLE_HTTP else 'red'))
-    print(colored(f"> HTTPS: https://{HOST}:{HTTPS_PORT} " if ENABLE_HTTPS else "HTTPS: Disabled", 'green' if ENABLE_HTTPS else 'red'))
-    print(colored(f"> OLLAMA: http://{HOST}:{OLLAMA_PORT}" if ENABLE_OLLAMA else "OLLAMA: Disabled", 'green' if ENABLE_OLLAMA else 'red'))
     print(colored(f"> API Model Backend: {MODE}", 'yellow'))
     if CODE_INJECTION_ENABLED:
-        print(colored(f"> CODE INJECTION: ENABLED (AUTO)", 'red'))
+        print(colored(f"> CODE INJECTION: ENABLED (AUTO)", 'green'))
+    else:
+        print(colored(f"> CODE INJECTION: DISABLED", 'red'))
     if DUMP_MODE:
         print(colored(f"> DUMP Logging to file: ENABLED", "cyan"))
+    else:
+        print(colored(f"> DUMP Logging to file: DISABLED", "red"))
     print(colored("="*40, 'blue'))
-    print(colored("Available endpoints:", 'magenta'))
-    print(colored("> api.openai.com (http/s)", 'white'))
-    print(colored("> api.deepseek.com (http/s)", 'white'))
-    print(colored("> localhost:11434 (ollama)", 'white'))
+    print(colored("          Available Endpoints", 'green'))
     print(colored("="*40, 'blue'))
-    print(colored("   Press Ctrl+C to stop all servers", 'red'))
+    print(colored(f"> HTTP:  http://{HOST}:{HTTP_PORT}" if ENABLE_HTTP else "HTTP: Disabled", 'white' if ENABLE_HTTP else 'red'))
+    print(colored(f"> HTTPS: https://{HOST}:{HTTPS_PORT} " if ENABLE_HTTPS else "HTTPS: Disabled", 'white' if ENABLE_HTTPS else 'red'))
+    print(colored(f"> OLLAMA: http://{HOST}:{OLLAMA_PORT}" if ENABLE_OLLAMA else "OLLAMA: Disabled", 'white' if ENABLE_OLLAMA else 'red'))
+    print(colored("="*40, 'blue'))
+    print(colored("    Press Ctrl+C to stop all servers", 'red'))
     print(colored("="*40 + "\n", 'blue'))
     
     try:
@@ -1168,11 +1323,40 @@ async def run_all_servers():
     finally:
         shutdown_event.set()
 
+def _load_models_sync() -> List[Dict]:
+    if not os.path.exists(MODELS_FILE):
+        return []
+    try:
+        with open(MODELS_FILE, "rb") as f:
+            return toml.load(f).get("models", [])
+    except Exception:
+        return []
+
+def get_available_families() -> List[str]:
+    families = []
+    seen = set()
+    for m in _load_models_sync():
+        fam = m.get("family", "").strip().lower()
+        if fam and fam not in seen:
+            seen.add(fam)
+            families.append(fam)
+    return families
+
+def is_valid_forced_value(value: str) -> bool:
+    value_lower = value.strip().lower()
+    if value_lower in get_available_families():
+        return True
+    return any(
+        m.get("name", "").strip().lower() == value_lower
+        or m.get("model", "").strip().lower() == value_lower
+        for m in _load_models_sync()
+    )
+
 if __name__ == '__main__':
     print(colored(r"""
     _____   ___ __    __    __      
    /  _  \ |   |  | _|__| _|  | _____  
-  /  / \  \|   |  |/ /  |/ __ |/  _  \ 
+  /  / \  \|   |  |/ /__ / __ |/  _  \ 
  /  /___\  \   |    <|  / /_/ |  (_)  |
  \  _______/___|__|_ \__\_____|\_____/ 
   \/                \/             
@@ -1194,7 +1378,7 @@ if __name__ == '__main__':
     parser.add_argument("--dump", action="store_true", help="Enable dump mode and save output to JSON")
     parser.add_argument("--poison", action="store_true", help="Enable code injection mode (Python)")
     parser.add_argument("--no-driver", action="store_true", help="Run in ChatGPT (NoDriver mode)")
-    parser.add_argument("--api-rest", choices=["auto", "deepseek", "gemini", "hacktricks", "openai", "phind"], help="Run in API REST mode (auto/deepseek/gemini/hacktricks/openai/phind)")
+    parser.add_argument("--api-rest", help="Run in API REST mode. Use 'auto' for automatic fallback across families, or a family name defined in models.toml (e.g. deepseek, openai, gemini, ollama)")
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1214,17 +1398,17 @@ if __name__ == '__main__':
 
     if args.no_driver:
         MODE = "ChatGPT (NoDriver)"
-    elif args.api_rest == "auto":
+    elif args.api_rest:
+        if args.api_rest.lower() == "auto":
+            MODE = "Automatic REST API"
+        else:
+            requested = args.api_rest.strip().lower()
+            if not is_valid_forced_value(requested):
+                fams = ", ".join(get_available_families()) if get_available_families() else "none"
+                print(colored(f"[!] '{args.api_rest}' not found in {MODELS_FILE}. Available families: {fams}", 'red'))
+                sys.exit(1)
+            MODE = f"{requested.capitalize()} REST API"
+    else:
         MODE = "Automatic REST API"
-    elif args.api_rest == "deepseek":
-        MODE = "Deepseek REST API"
-    elif args.api_rest == "openai":
-        MODE = "OpenAI REST API"
-    elif args.api_rest == "gemini":
-        MODE = "Gemini REST API"
-    elif args.api_rest == "hacktricks":
-        MODE = "HackTricks REST API"
-    elif args.api_rest == "phind":
-        MODE = "Phind REST API"
 
     asyncio.run(run_all_servers())

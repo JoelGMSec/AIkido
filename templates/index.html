@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIkido Web Client</title>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = { 
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Quicksand"', 'sans-serif'],
+                    },
+                }
+            }
+        }
+        document.documentElement.classList.add('dark');
+    </script>
+    <style>
+        body { 
+            font-family: 'Quicksand', sans-serif; 
+            transition: background-color 0.3s; 
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 10px; }
+        #chat-window { scroll-behavior: smooth; }
+
+        #msg-input:focus, #msg-input:focus-visible, #msg-input:active {
+            outline: none !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+        }
+        
+        .rounded-2xl { border-radius: 1.5rem; }
+        .rounded-3xl { border-radius: 2rem; }
+        .rounded-xl { border-radius: 1.25rem; }
+
+        .ai-gradient {
+          background: #fff;
+            background-clip: border-box;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          filter: drop-shadow(0 0 35px rgb(60, 120, 245, 0.75));
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-[#0b0e14] text-slate-900 dark:text-slate-100 h-screen flex overflow-hidden">
+
+    <aside class="w-72 bg-white dark:bg-[#13171f] border-r border-slate-200 dark:border-slate-800 flex flex-col">
+        <div class="pt-12 pb-8 px-6 flex flex-col items-center">
+            <a href="https://github.com/JoelGMSec/AIkido" target="_blank" rel="noopener noreferrer" title="AIkido on GitHub">
+                <img src="/AIkido.png" alt="AIkido Logo" class="h-28 w-auto object-contain drop-shadow-2xl hover:opacity-80 transition-opacity">
+            </a>
+        </div>
+
+        <button onclick="newChat()" class="mx-4 p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center gap-2 font-bold transition-all">
+            New Chat
+        </button>
+
+        <div id="history-list" class="flex-1 overflow-y-auto custom-scrollbar p-2 mt-4 space-y-1"></div>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative h-full">
+        <div id="chat-window" class="flex-1 overflow-y-auto p-4 md:p-10 space-y-6 custom-scrollbar">
+            <div id="welcome" class="text-center mt-20 space-y-6">
+                <div class="flex items-center justify-center mx-auto">
+                    <i class="fa-solid fa-hat-wizard text-7xl ai-gradient"></i>
+                </div>
+                <div class="space-y-2">
+                    <h1 class="text-4xl font-bold tracking-tight">AIkido Web Client</h1>
+                    <p class="text-slate-500 font-semibold text-lg">How can I help you today?</p>
+                </div>
+            </div>
+            <div id="messages" class="w-full max-w-3xl mx-auto space-y-6"></div>
+        </div>
+
+        <div class="p-4 md:p-6">
+            <div class="max-w-3xl mx-auto space-y-4">
+                <div id="attachment-area" class="flex items-center gap-2"></div>
+                <div class="bg-white dark:bg-[#1a1f29] rounded-3xl shadow-xl border border-slate-200 dark:border-slate-700 px-4 py-2 flex items-center gap-1 transition-colors">
+                    
+                    <textarea id="msg-input" onkeydown="handleKeyPress(event)" rows="1" 
+                        class="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none py-3 resize-none max-h-40 font-semibold" 
+                        placeholder="Ask anything..."></textarea>
+                    
+                    <div class="flex items-center gap-1">
+                        <button id="attach-btn" onclick="document.getElementById('file-input').click()" class="p-2.5 text-slate-400 hover:text-blue-500 transition-colors">
+                            <i data-lucide="paperclip" class="w-5 h-5"></i>
+                        </button>
+                        <input type="file" id="file-input" class="hidden">
+                        
+                        <button id="mic-btn" onclick="toggleMic()" class="p-2.5 text-slate-400 hover:text-blue-500 transition-colors">
+                            <i data-lucide="mic" class="w-5 h-5"></i>
+                        </button>
+                        
+                        <button id="send-btn" onclick="send()" style="margin-left: 0.55rem;" class="ml-1 p-3 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition shadow-md flex items-center justify-center">
+                            <i data-lucide="send" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+                
+            <div class="flex justify-between items-center px-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Model:</span>
+                    <select id="model-select" class="bg-transparent text-[11px] font-bold text-blue-500 outline-none cursor-pointer pl-1 pr-1 py-0"></select>
+                    <span id="model-lock" class="hidden text-[10px] font-bold text-slate-500 uppercase tracking-widest"></span>
+                </div>
+                <a href="https://twitter.com/JoelGMSec" target="_blank" rel="noopener noreferrer" 
+                   class="text-[10px] uppercase tracking-widest text-slate-400 font-bold hover:text-blue-500 transition-colors">
+                    by @JoelGMSec
+                </a>
+            </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let currentChatId = null;
+        let messages = [];
+        let isTyping = false;
+        let attachedFile = null;
+        let recognition = null;
+        let isRecording = false;
+
+        async function init() {
+            lucide.createIcons();
+            await loadModels();
+            await loadHistory();
+            
+            const tx = document.getElementById('msg-input');
+            tx.addEventListener("input", function() {
+                this.style.height = "auto";
+                this.style.height = (this.scrollHeight) + "px";
+            }, false);
+
+            document.getElementById('file-input').addEventListener('change', handleFileSelect);
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                send();
+            }
+        }
+
+        async function loadModels() {
+            try {
+                const modeRes = await fetch('/api/mode');
+                const mode = await modeRes.json();
+                const select = document.getElementById('model-select');
+                const lock = document.getElementById('model-lock');
+                const models = mode.models || [];
+
+                if (mode.selection === 'none') {
+                    select.innerHTML = '<option value="chatgpt">ChatGPT (NoDriver)</option>';
+                    lock.textContent = '';
+                    lock.classList.remove('hidden');
+                } else if (models.length) {
+                    select.innerHTML = models.map(m => `<option value="${m}">${m.toUpperCase()}</option>`).join('');
+                    if (mode.selection === 'forced') {
+                        lock.textContent = `locked to ${mode.forced}`;
+                        lock.classList.remove('hidden');
+                    }
+                } else {
+                    select.innerHTML = '<option value="">No models available</option>';
+                }
+
+                const locked = mode.selection !== 'auto' || !models.length;
+                select.disabled = locked;
+                select.classList.toggle('text-slate-500', locked);
+                select.classList.toggle('cursor-not-allowed', locked);
+                select.classList.toggle('cursor-pointer', !locked);
+            } catch(e) { console.error("Could not load models"); }
+        }
+
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history');
+                const data = await res.json();
+                const list = document.getElementById('history-list');
+                list.innerHTML = data.map(chat => `
+                    <div class="group flex items-center justify-between p-3 text-sm rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition ${chat.id === currentChatId ? 'bg-slate-100 dark:bg-slate-800' : ''}">
+                        <div onclick="openChat('${chat.id}')" class="flex-1 truncate mr-2 font-bold">
+                            <i data-lucide="message-square" class="w-3 h-3 inline mr-2 opacity-50"></i> ${chat.title}
+                        </div>
+                        <button onclick="deleteChat('${chat.id}')" class="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition">
+                            <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        </button>
+                    </div>
+                `).join('');
+                lucide.createIcons();
+            } catch(e) { console.error("History API error"); }
+        }
+
+        async function deleteChat(id) {
+            if (!confirm('Delete this conversation?')) return;
+            await fetch(`/api/history/${id}`, { method: 'DELETE' });
+            if (currentChatId === id) newChat();
+            loadHistory();
+        }
+
+        async function openChat(id) {
+            const res = await fetch('/api/history');
+            const data = await res.json();
+            const chat = data.find(c => c.id === id);
+            if (chat) {
+                currentChatId = chat.id;
+                messages = chat.messages;
+                document.getElementById('messages').innerHTML = '';
+                document.getElementById('welcome').classList.add('hidden');
+                messages.forEach(m => appendUI(m.role, m.content));
+                scrollToBottom();
+                loadHistory();
+            }
+        }
+
+        function scrollToBottom() {
+            const win = document.getElementById('chat-window');
+            win.scrollTop = win.scrollHeight;
+        }
+
+        async function typeWriterEffect(element, text) {
+            isTyping = true;
+            const words = text.split(' ');
+            let currentText = "";
+            for (let i = 0; i < words.length; i++) {
+                currentText += words[i] + (i < words.length - 1 ? " " : "");
+                element.innerHTML = currentText.replace(/\n/g, '<br>');
+                scrollToBottom();
+                await new Promise(resolve => setTimeout(resolve, 15 + Math.random() * 10));
+            }
+            isTyping = false;
+        }
+
+        async function handleFileSelect(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            renderAttachmentChip({ filename: file.name, size: file.size, uploading: true });
+            const form = new FormData();
+            form.append('file', file);
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: form });
+                const data = await res.json();
+                if (data.error) {
+                    removeAttachment();
+                    alert(data.error);
+                    return;
+                }
+                attachedFile = { filename: data.filename, size: data.size, is_text: data.is_text, content: data.content };
+                renderAttachmentChip(attachedFile);
+            } catch (err) {
+                removeAttachment();
+                alert("Upload failed.");
+            }
+            e.target.value = '';
+        }
+
+        function renderAttachmentChip(file) {
+            const area = document.getElementById('attachment-area');
+            const label = file.uploading
+                ? `${file.filename} (uploading...)`
+                : file.content
+                    ? `${file.filename} (${(file.size/1024).toFixed(1)} KB)`
+                    : `${file.filename} (binary file)`;
+            area.innerHTML = `
+                <div class="flex items-center gap-2 bg-white dark:bg-[#1a1f29] border border-blue-500/40 rounded-xl px-3 py-2 text-xs font-bold w-full">
+                    <i data-lucide="file-text" class="w-4 h-4 text-blue-500 shrink-0"></i>
+                    <span class="truncate">${label}</span>
+                    <button onclick="removeAttachment()" class="ml-auto text-slate-400 hover:text-red-500 shrink-0">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>`;
+            lucide.createIcons();
+        }
+
+        function removeAttachment() {
+            attachedFile = null;
+            document.getElementById('attachment-area').innerHTML = '';
+        }
+
+        function toggleMic() {
+            if (isRecording) { stopRecording(); return; }
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) {
+                alert("Speech recognition is not supported in this browser. Use Chrome/Edge over HTTPS.");
+                return;
+            }
+            recognition = new SR();
+            recognition.lang = 'es-ES';
+            recognition.interimResults = true;
+            recognition.continuous = true;
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = 0; i < event.results.length; i++)
+                    transcript += event.results[i][0].transcript;
+                const tx = document.getElementById('msg-input');
+                tx.value = transcript;
+                tx.style.height = "auto";
+                tx.style.height = tx.scrollHeight + "px";
+            };
+            recognition.onend = () => setRecording(false);
+            recognition.onerror = () => setRecording(false);
+            recognition.start();
+            setRecording(true);
+        }
+
+        function stopRecording() {
+            if (recognition) recognition.stop();
+        }
+
+        function setRecording(state) {
+            isRecording = state;
+            const btn = document.getElementById('mic-btn');
+            btn.classList.toggle('text-red-500', state);
+            btn.classList.toggle('text-slate-400', !state);
+            btn.innerHTML = `<i data-lucide="${state ? 'radio' : 'mic'}" class="w-5 h-5"></i>`;
+            lucide.createIcons();
+        }
+
+        async function send() {
+            if (isTyping) return;
+            const input = document.getElementById('msg-input');
+            const text = input.value.trim();
+            if (!text && !attachedFile) return;
+
+            let finalText = text;
+            if (attachedFile && attachedFile.content) {
+                finalText = `[Attached file: ${attachedFile.filename}]\n\n\`\`\`\n${attachedFile.content}\n\`\`\`\n\n${text}`;
+            } else if (attachedFile) {
+                finalText = `[Attached file: ${attachedFile.filename} (binary file, not readable as text)]\n\n${text}`;
+            }
+
+            if (messages.length === 0) document.getElementById('welcome').classList.add('hidden');
+            if (!currentChatId) currentChatId = 'chat_' + Date.now();
+
+            appendUI('user', finalText);
+            scrollToBottom();
+            messages.push({role: 'user', content: finalText});
+            input.value = '';
+            input.style.height = "auto";
+            removeAttachment();
+
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `flex justify-start`;
+            div.innerHTML = `<div class="max-w-[85%] p-4 rounded-3xl bg-white dark:bg-[#1a1f29] border border-slate-200 dark:border-slate-800 shadow-sm"><p class="text-sm leading-relaxed text-slate-400 font-bold">Thinking...</p></div>`;
+            container.appendChild(div);
+            const p = div.querySelector('p');
+
+            try {
+                const res = await fetch('/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ model: document.getElementById('model-select').value, messages: messages })
+                });
+                const data = await res.json();
+                const reply = data.choices[0].message.content;
+                p.classList.remove('text-slate-400');
+                await typeWriterEffect(p, reply);
+                messages.push({role: 'assistant', content: reply});
+            } catch (e) {
+                p.innerText = "Error communicating with the backend.";
+            }
+
+            await fetch('/api/history', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ id: currentChatId, title: messages[0].content.substring(0, 25), messages: messages })
+            });
+            loadHistory();
+        }
+
+        function appendUI(role, content) {
+            const container = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = `flex ${role === 'user' ? 'justify-end' : 'justify-start'}`;
+            div.innerHTML = `
+                <div class="max-w-[85%] p-4 px-6 rounded-3xl font-semibold ${role === 'user' ? 'bg-blue-600 text-white shadow-lg' : 'bg-white dark:bg-[#1a1f29] border border-slate-200 dark:border-slate-800'}">
+                    <p class="text-sm leading-relaxed">${content.replace(/\n/g, '<br>')}</p>
+                </div>
+            `;
+            container.appendChild(div);
+        }
+
+        function newChat() {
+            if (isTyping) return;
+            currentChatId = null;
+            messages = [];
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('welcome').classList.remove('hidden');
+            loadHistory();
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -4,13 +4,13 @@
 
 ### Fake-AI API Server
 
-**AIkido** is a fake OpenAI-compatible API server that integrates real **ChatGPT** (via `nodriver`) and supports multiple AI backends (DeepSeek, Gemini, HackTricks, Phind, OpenAI).  It provides a **drop-in replacement API** for testing, research, and red team exercises, with optional features such as **HTTP/2, SSL, API key emulation, request logging, dump mode, and code injection simulation**.  
+**AIkido** is a fake OpenAI-compatible API server that integrates real **ChatGPT** (via `nodriver`) and supports multiple AI backends via OpenAI compatible API or Ollama compatible API.  It provides a **drop-in replacement API** for testing, research, and red team exercises, with optional features such as **HTTP/2, SSL, API key emulation, request logging, dump mode, and code injection simulation**.  
 
 
 ## ✨ Features
 
-- 🌐 **Simulated OpenAI API**: Compatible with `/v1/chat/completions`, `/v1/models`, `/account/api-keys`, `/version`.
-- ⚡ **Multi-backend support**: Choose between `ChatGPT (NoDriver)`, `DeepSeek`, `Gemini`, `HackTricks`, `OpenAI`, or `Phind` REST APIs.
+- 🌐 **Web User Interface**: Chat with any supported model using a responsive, user-friendly interface. 
+- ⚡ **Multi-backend support**: Choose between ChatGPT (NoDriver) and any OpenAI or Ollama compatible REST API.
 - 🐍 **Code injection simulation**: Payload response injection to test LLM supply chain or insecure eval scenarios.
 - 📜 **Dump logging**: Save all requests and responses to JSON for auditing or analysis.
 - 🔑 **API key validation**: Fake endpoint to simulate valid OpenAI compatible API keys.
@@ -45,7 +45,7 @@ python3 AIkido.py --no-driver
 # Run with REST API (auto-detect best backend)
 python3 AIkido.py --api-rest auto
 
-# Force DeepSeek backend
+# Force DeepSeek family backend
 python3 AIkido.py --api-rest deepseek
 
 # Enable code injection mode
